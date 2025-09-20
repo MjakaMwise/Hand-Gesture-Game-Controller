@@ -1,7 +1,7 @@
-# Hand Gesture based Mouse Conrtroller
+# Hand Gesture  Mouse Conrtroller
 
 ## Description
-Hand-Controlled Mouse allows you to control your computer's mouse using hand gestures tracked by your webcam. It uses real-time hand tracking to move the cursor, click, drag, right-click, and scroll based on gestures.
+Hand-Gesture-Controlled Mouse allows you to control your computer's mouse using hand gestures tracked by your webcam. It uses real-time hand tracking to move the cursor, click, drag, right-click, and scroll based on gestures.
 
 ## Features
 - Move the cursor using the index finger.
