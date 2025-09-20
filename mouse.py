@@ -5,25 +5,25 @@ import time
 
 # Constants for drawing
 CIRCLE_RADIUS = 5
-CIRCLE_COLOR = (0, 255, 0)  # Green
+CIRCLE_COLOR = (0, 235, 0)  # Green
 CIRCLE_THICKNESS = -1  # Filled circle
 LINE_COLOR = (0, 255, 0)  # Green
 LINE_THICKNESS = 2
 SCALING_FACTOR = 5.0  # Factor to amplify the cursor movement
-
+SMOOTHING_ALPHA = 0.2  # Exponential smoothing factor
 
 def init_webcam():
     cap = cv2.VideoCapture(0)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)  # Reduce resolution for performance
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     if not cap.isOpened():
         raise RuntimeError("Error: Could not open video device.")
     return cap
 
-
 def process_frame(frame):
-    frame = cv2.flip(frame, 1)
+    frame = cv2.flip(frame, 1)  # Flip horizontally for a more intuitive user experience
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     return frame, rgb_frame
-
 
 def draw_landmarks(frame, hands, drawing_utils):
     for hand in hands:
@@ -42,7 +42,6 @@ def draw_landmarks(frame, hands, drawing_utils):
             cv2.line(frame, (start_x, start_y), (end_x, end_y), LINE_COLOR, LINE_THICKNESS)
     return landmarks
 
-
 def get_landmark_coordinates(landmarks, frame_width, frame_height):
     coords = {}
     for id, landmark in enumerate(landmarks):
@@ -50,7 +49,6 @@ def get_landmark_coordinates(landmarks, frame_width, frame_height):
         y = int(landmark.y * frame_height)
         coords[id] = (x, y)
     return coords
-
 
 def map_to_screen(coords, screen_width, screen_height, frame_width, frame_height):
     mapped_coords = {}
@@ -60,11 +58,12 @@ def map_to_screen(coords, screen_width, screen_height, frame_width, frame_height
         mapped_coords[id] = (mapped_x, mapped_y)
     return mapped_coords
 
-
 def move_cursor(index_coords, plocx, plocy, smoothening):
     index_x, index_y = index_coords
-    clocx = plocx + (index_x - plocx) / smoothening
-    clocy = plocy + (index_y - plocy) / smoothening
+
+    # Exponential smoothing for smoother movement
+    clocx = (1 - SMOOTHING_ALPHA) * plocx + SMOOTHING_ALPHA * index_x
+    clocy = (1 - SMOOTHING_ALPHA) * plocy + SMOOTHING_ALPHA * index_y
 
     # Apply scaling factor for more sensitive movement
     clocx = plocx + (clocx - plocx) * SCALING_FACTOR
@@ -72,7 +71,6 @@ def move_cursor(index_coords, plocx, plocy, smoothening):
 
     pyautogui.moveTo(clocx, clocy)
     return clocx, clocy
-
 
 def detect_gestures(coords, thumb_coords, click_time, click_threshold, single_click_flag, left_dragging):
     thumb_x, thumb_y = thumb_coords
@@ -120,7 +118,6 @@ def detect_gestures(coords, thumb_coords, click_time, click_threshold, single_cl
 
     return click_time, single_click_flag, left_dragging
 
-
 def add_user_instructions(frame):
     instructions = [
         "Virtual Mouse Instructions:",
@@ -135,10 +132,9 @@ def add_user_instructions(frame):
         y = y0 + i * dy
         cv2.putText(frame, line, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
 
-
 def main():
     cap = init_webcam()
-    hand_detector = mp.solutions.hands.Hands()
+    hand_detector = mp.solutions.hands.Hands(max_num_hands=1)  # Track only one hand
     drawing_utils = mp.solutions.drawing_utils
     screen_width, screen_height = pyautogui.size()
     smoothening = 7
@@ -147,6 +143,7 @@ def main():
     click_threshold = 0.3
     single_click_flag = False
     left_dragging = False
+    frame_count = 0
 
     while True:
         ret, frame = cap.read()
@@ -154,30 +151,33 @@ def main():
             print("Error: Failed to capture image.")
             break
 
-        frame, rgb_frame = process_frame(frame)
-        frame_height, frame_width, _ = frame.shape
-        output = hand_detector.process(rgb_frame)
-        hands = output.multi_hand_landmarks
+        if frame_count % 3 == 0:  # Process every 3rd frame
+            frame, rgb_frame = process_frame(frame)
+            frame_height, frame_width, _ = frame.shape
+            output = hand_detector.process(rgb_frame)
+            hands = output.multi_hand_landmarks
 
-        if hands:
-            landmarks = draw_landmarks(frame, hands, drawing_utils)
-            coords = get_landmark_coordinates(landmarks, frame_width, frame_height)
-            mapped_coords = map_to_screen(coords, screen_width, screen_height, frame_width, frame_height)
-            clocx, clocy = move_cursor(mapped_coords[8], plocx, plocy, smoothening)
-            plocx, plocy = clocx, clocy
+            if hands:
+                landmarks = draw_landmarks(frame, hands, drawing_utils)
+                coords = get_landmark_coordinates(landmarks, frame_width, frame_height)
+                mapped_coords = map_to_screen(coords, screen_width, screen_height, frame_width, frame_height)
+                clocx, clocy = move_cursor(mapped_coords[8], plocx, plocy, smoothening)
+                plocx, plocy = clocx, clocy
 
-            click_time, single_click_flag, left_dragging = detect_gestures(
-                mapped_coords, mapped_coords[4], click_time, click_threshold, single_click_flag, left_dragging
-            )
+                click_time, single_click_flag, left_dragging = detect_gestures(
+                    mapped_coords, mapped_coords[4], click_time, click_threshold, single_click_flag, left_dragging
+                )
 
-        add_user_instructions(frame)
+            add_user_instructions(frame)
+
         cv2.imshow('Virtual Mouse', frame)
+        frame_count += 1
+
         if cv2.waitKey(1) & 0xFF == 27:  # Press 'Esc' to exit
             break
 
     cap.release()
     cv2.destroyAllWindows()
-
 
 if __name__ == "__main__":
     main()
